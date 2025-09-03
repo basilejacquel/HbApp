@@ -85,7 +85,7 @@ if "covariants_5m" not in globals():
 
 
 # === Figure 4 : top n_firstDistances compatibles ===
-st.subheader("Top VM les plus proches")
+st.subheader("HbX compatibles avec les temps de rétention")
 
 n_firstDistances = 30
 finite_idx = np.where(np.isfinite(variant_mean["distance"]))[0]
@@ -114,13 +114,13 @@ if n_display > 0:
     bars = ax.bar(plot_vms, plot_distances, color=colors)
     ax.set_xticklabels(plot_vms, rotation=45, ha="right")
     ax.set_ylabel("Distance Euclidienne")
-    ax.set_title("Top VM compatibles")
+    ax.set_title("HbX compatibles")
     st.pyplot(fig)
 
 
 
 # === Figure 7 : top 50 VM toutes distances ===
-st.subheader("Top 50 VM par distance")
+st.subheader("Top 50 HbX par distance")
 
 # ⚠️ recalcul sans filtrer les incompatibles
 vm_norm = (vm_data - vm_data.mean(axis=0)) / vm_data.std(axis=0, ddof=1)
@@ -149,7 +149,7 @@ bars = ax.bar(plot_vms, plot_distances, color=colors)
 ax.set_xticklabels(plot_vms, rotation=45, ha="right")
 ax.set_ylabel("Distance Euclidienne")
 ax.set_xlabel("Variants (Top 50 triés par distance)")
-ax.set_title("Top 50 VM (compatibles en bleu, incompatibles en gris, highlights en rouge)")
+ax.set_title("Top 50 HbX (compatibles en bleu, incompatibles en gris, highlights en rouge)")
 st.pyplot(fig)
 
 
@@ -184,12 +184,12 @@ if len(selected_methods) >= 2:
 
     ax.set_xlabel(method_x)
     ax.set_ylabel(method_y)
-    ax.set_title("Vue globale (rouge = principaux, bleu = HbX)")
+    ax.set_title("Vue globale (rouge = Hb principales, bleu = HbX)")
     st.pyplot(fig)
 
-# === Figure 6 : zoom sur VM compatibles ===
+# === Figure 6 : Zoom sur les HbX compatibles ===
 if len(selected_methods) >= 2:
-    st.subheader("Zoom sur VM compatibles")
+    st.subheader("Zoom sur les HbX compatibles")
     compat_idx = np.isfinite(variant_mean["distance"])
     vm_candidates = variant_mean.loc[compat_idx, "variant"].values
     vm_x_cand = variant_mean.loc[compat_idx, "mean_" + method_x].values
@@ -214,8 +214,9 @@ if len(selected_methods) >= 2:
 
     ax.set_xlabel(method_x)
     ax.set_ylabel(method_y)
-    ax.set_title("Zoom sur VM compatibles")
+    ax.set_title("HbX compatibles")
     st.pyplot(fig)
+
 
 
 
