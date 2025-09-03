@@ -24,198 +24,21 @@ bounds_upper = pd.read_csv(BytesIO(base64.b64decode(BOUNDS_UPPER_B64)))
 bounds_margin = pd.read_csv(BytesIO(base64.b64decode(BOUNDS_MARGIN_B64)), index_col=0)
 highlight_variants = json.loads(base64.b64decode(HIGHLIGHT_VARIANTS_B64).decode("utf-8"))
 
-methods = list(bounds_lower.columns)
-
-st.title("🩸 Diagnostic HbX inconnu")
-
-# === Interface utilisateur ===
-st.sidebar.header("⚙️ Paramètres")
-input_vals = {}
-selected_methods = []
-
-for m in methods:
-    val = st.sidebar.text_input(f"Valeur mesurée pour {m} :", "")
-    if val.strip() != "":
-        input_vals[m] = float(val)
-        selected_methods.append(m)
-
-if not selected_methods:
-    st.warning("👉 Entrez au moins une valeur pour continuer.")
-    st.stop()
-
-st.write("### Méthodes sélectionnées :", selected_methods)
-
-# === Calcul des distances ===
-vm_data = variant_mean[["mean_" + m for m in selected_methods]].to_numpy()
-vi_data = np.array([input_vals[m] for m in selected_methods])
-
-# Normalisation Z-score
-vm_norm = (vm_data - vm_data.mean(axis=0)) / vm_data.std(axis=0, ddof=1)
-vi_norm = (vi_data - vm_data.mean(axis=0)) / vm_data.std(axis=0, ddof=1)
-
-distances = np.linalg.norm(vm_norm - vi_norm, axis=1)
-
-# Appliquer les bornes
-lb = bounds_lower[selected_methods].to_numpy()
-ub = bounds_upper[selected_methods].to_numpy()
-vi_lb = vi_data + bounds_margin.loc["l_bound", selected_methods].to_numpy()
-vi_ub = vi_data + bounds_margin.loc["u_bound", selected_methods].to_numpy()
-
-mask = np.all((vi_lb <= ub) & (vi_ub >= lb), axis=1)
-distances[~mask] = np.inf
-
-variant_mean["distance"] = distances
-
-# === Résultat principal ===
-valid_variants = variant_mean[np.isfinite(variant_mean["distance"])]
-if not valid_variants.empty:
-    valid_sorted = valid_variants.sort_values("distance")
-    predicted = valid_sorted.iloc[0]["variant"]
-    st.success(f"✅ Variant prédit : **{predicted}**")
-else:
-    predicted = None
-    st.warning("⚠️ Aucun variant compatible trouvé.")
-
-# --- Variables défensives pour couleurs ---
-if "covariants_selected" not in globals():
-    covariants_selected = []
-if "covariants_5m" not in globals():
-    covariants_5m = []
-
-
-
-# === Figure 4 : top n_firstDistances compatibles ===
-st.subheader("Top VM les plus proches")
-
-n_firstDistances = 30
-finite_idx = np.where(np.isfinite(variant_mean["distance"]))[0]
-finite_sorted_idx = finite_idx[np.argsort(variant_mean.loc[finite_idx, "distance"].values)]
-n_display = min(n_firstDistances, len(finite_sorted_idx))
-
-if n_display > 0:
-    plot_idx = finite_sorted_idx[:n_display]
-    plot_distances = variant_mean.loc[plot_idx, "distance"].values
-    plot_vms = variant_mean.loc[plot_idx, "variant"].values
-
-    colors = []
-    for vm in plot_vms:
-        if vm in highlight_variants:
-            colors.append("red")
-        elif vm == predicted:
-            colors.append("darkblue")
-        elif vm in covariants_selected:
-            colors.append("#3366cc")  # bleu moyen
-        elif vm in covariants_5m:
-            colors.append("#99ccff")  # bleu clair
-        else:
-            colors.append("#3366cc")  # 🔵 compatible (par défaut en bleu)
-    
-    fig, ax = plt.subplots()
-    bars = ax.bar(plot_vms, plot_distances, color=colors)
-    ax.set_xticklabels(plot_vms, rotation=45, ha="right")
-    ax.set_ylabel("Distance Euclidienne")
-    ax.set_title("Top VM compatibles")
-    st.pyplot(fig)
-
-
-
-# === Figure 7 : top 50 VM toutes distances ===
-st.subheader("Top 50 VM par distance")
-
-# ⚠️ recalcul sans filtrer les incompatibles
-vm_norm = (vm_data - vm_data.mean(axis=0)) / vm_data.std(axis=0, ddof=1)
-vi_norm = (vi_data - vm_data.mean(axis=0)) / vm_data.std(axis=0, ddof=1)
-distances_all = np.linalg.norm(vm_norm - vi_norm, axis=1)
-
-sorted_idx_all = np.argsort(distances_all)
-plot_idx = sorted_idx_all[:50]
-plot_distances = distances_all[plot_idx]
-plot_vms = variant_mean.loc[plot_idx, "variant"].values
-
-colors = []
-for i, vmname in enumerate(plot_vms):
-    if vmname in highlight_variants:
-        colors.append("red")
-    elif vmname == predicted:
-        colors.append("darkblue")
-    elif mask[plot_idx[i]]:  # compatible
-        colors.append("#3366cc")
-    else:  # incompatible
-        colors.append("lightgrey")
-
-
-fig, ax = plt.subplots()
-bars = ax.bar(plot_vms, plot_distances, color=colors)
-ax.set_xticklabels(plot_vms, rotation=45, ha="right")
-ax.set_ylabel("Distance Euclidienne")
-ax.set_xlabel("Variants (Top 50 triés par distance)")
-ax.set_title("Top 50 VM (compatibles en bleu, incompatibles en gris, highlights en rouge)")
-st.pyplot(fig)
-
-
-# === Figure 5 : scatter des deux premières méthodes ===
+# === Choix des méthodes pour les graphiques ===
 if len(selected_methods) >= 2:
-    st.subheader("Vue globale des deux premières méthodes")
-    method_x, method_y = selected_methods[:2]
-    vi_x, vi_y = input_vals[method_x], input_vals[method_y]
+    methods_for_plot = st.sidebar.multiselect(
+        "👉 Choisissez 2 méthodes pour les graphiques :",
+        options=selected_methods,
+        default=selected_methods[:2],
+        max_selections=2
+    )
 
-    vm_x = variant_mean["mean_" + method_x].values
-    vm_y = variant_mean["mean_" + method_y].values
-
-    highlight_mask = np.isin(variant_mean["variant"].values, highlight_variants)
-
-    fig, ax = plt.subplots()
-    ax.scatter(vm_x, vm_y, c="k", s=30)
-    ax.scatter(vm_x[highlight_mask], vm_y[highlight_mask], c="r", s=50)
-    
-    # Labels pour highlights
-    for i, txt in enumerate(variant_mean["variant"].values):
-        if highlight_mask[i]:
-            ax.text(vm_x[i]+0.01, vm_y[i]+0.01, txt, fontsize=8, color="r")
-
-    # Barres d'erreur HbX
-    vi_x_err_neg = abs(2 * bounds_margin.loc["l_bound", method_x])
-    vi_x_err_pos = abs(2 * bounds_margin.loc["u_bound", method_x])
-    vi_y_err_neg = abs(2 * bounds_margin.loc["l_bound", method_y])
-    vi_y_err_pos = abs(2 * bounds_margin.loc["u_bound", method_y])
-    ax.errorbar(vi_x, vi_y, yerr=[[vi_y_err_neg], [vi_y_err_pos]],
-                xerr=[[vi_x_err_neg], [vi_x_err_pos]],
-                fmt='o', color='b', ecolor='b', capsize=5, lw=1.5, mec='b', mfc='b')
-
-    ax.set_xlabel(method_x)
-    ax.set_ylabel(method_y)
-    ax.set_title("Vue globale (rouge = principaux, bleu = HbX)")
-    st.pyplot(fig)
-
-# === Figure 6 : zoom sur VM compatibles ===
-if len(selected_methods) >= 2:
-    st.subheader("Zoom sur VM compatibles")
-    compat_idx = np.isfinite(variant_mean["distance"])
-    vm_candidates = variant_mean.loc[compat_idx, "variant"].values
-    vm_x_cand = variant_mean.loc[compat_idx, "mean_" + method_x].values
-    vm_y_cand = variant_mean.loc[compat_idx, "mean_" + method_y].values
-
-    highlight_cand_mask = np.isin(vm_candidates, highlight_variants)
-
-    fig, ax = plt.subplots()
-    ax.scatter(vm_x_cand, vm_y_cand, c='k', s=30)
-    for i, txt in enumerate(vm_candidates):
-        dx = 0.01 * (vm_x_cand.max()-vm_x_cand.min())
-        dy = 0.01 * (vm_y_cand.max()-vm_y_cand.min())
-        if highlight_cand_mask[i]:
-            ax.text(vm_x_cand[i]+dx, vm_y_cand[i]+dy, txt, fontsize=8, color='r', fontweight='bold')
-        else:
-            ax.text(vm_x_cand[i]+dx, vm_y_cand[i]+dy, txt, fontsize=8, color='k')
-
-    ax.errorbar(vi_x, vi_y, yerr=[[vi_y_err_neg], [vi_y_err_pos]],
-                xerr=[[vi_x_err_neg], [vi_x_err_pos]],
-                fmt='o', color='b', ecolor='b', capsize=5, lw=1.5, mec='b', mfc='b')
-    ax.text(vi_x+dx, vi_y+3*dy, "HbX", fontsize=10, color='b', fontweight='bold')
-
-    ax.set_xlabel(method_x)
-    ax.set_ylabel(method_y)
-    ax.set_title("Zoom sur VM compatibles")
-    st.pyplot(fig)
+    if len(methods_for_plot) == 2:
+        method_x, method_y = methods_for_plot
+        vi_x, vi_y = input_vals[method_x], input_vals[method_y]
+    else:
+        st.warning("⚠️ Veuillez sélectionner exactement 2 méthodes pour afficher les graphiques.")
+        st.stop()
 
 
 
