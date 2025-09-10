@@ -31,7 +31,6 @@ methods = list(bounds_lower.columns)
 st.title("🩸 Diagnostic HbX inconnu")
 
 # === Interface utilisateur ===
-st.sidebar.header("⚙️ Paramètres")
 input_vals = {}
 selected_methods = []
 
@@ -84,6 +83,16 @@ distances[~mask] = np.inf
 
 variant_mean["distance"] = distances
 
+# === Calcul du score gaussien ===
+finite_distances = distances[np.isfinite(distances)]
+sigma_global = np.median(finite_distances)
+if sigma_global == 0:
+    sigma_global = 1e-6  # éviter division par zéro
+
+gaussian_score = np.exp(-(distances**2) / (2 * sigma_global**2))
+gaussian_score = gaussian_score / np.sum(gaussian_score)  # normalisation
+variant_mean["gaussian_score"] = gaussian_score
+
 # === Résultat principal ===
 valid_variants = variant_mean[np.isfinite(variant_mean["distance"])]
 if not valid_variants.empty:
@@ -100,24 +109,16 @@ if "covariants_selected" not in globals():
 if "covariants_5m" not in globals():
     covariants_5m = []
 
-
-# === 4. Calcul du sigma global et score gaussien ===
-finite_distances = distances[np.isfinite(distances)]
-sigma_global = np.median(finite_distances)
-if sigma_global == 0:
-    sigma_global = 1e-6  # éviter division par zéro
-
-gaussian_score = np.exp(-(distances**2) / (2 * sigma_global**2))
-gaussian_score = gaussian_score / np.sum(gaussian_score)  # normalisation pour que somme = 1
-
-variant_mean["gaussian_score"] = gaussian_score
-
-
-# === Figure 4 : top n_firstDistances compatibles ===
-# === Figure 4 : top n_firstDistances compatibles, avec score gaussien ===
+# === Figure 4 : top n_firstDistances compatibles - score gaussien ===
 st.subheader("HbX compatibles - Score de probabilité gaussien")
 
+n_firstDistances = 30
+finite_idx = np.where(np.isfinite(variant_mean["distance"]))[0]
+finite_sorted_idx = finite_idx[np.argsort(variant_mean.loc[finite_idx, "distance"].values)]
+n_display = min(n_firstDistances, len(finite_sorted_idx))
+
 if n_display > 0:
+    plot_idx = finite_sorted_idx[:n_display]
     plot_scores = variant_mean.loc[plot_idx, "gaussian_score"].values
     plot_vms = variant_mean.loc[plot_idx, "variant"].values
 
@@ -237,6 +238,7 @@ if len(selected_methods) >= 2 and 'method_x' in locals():
     ax.set_ylabel(method_y)
     ax.set_title("Zoom sur les HbX compatibles")
     st.pyplot(fig)
+
 
 
 
